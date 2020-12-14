@@ -1,7 +1,6 @@
 -- Modifiable variables
 local reactorSide = "back"
 local outputGateSide = "right"
-local emergencyChargeIsSetup = true
 local emergencyChargeGateSide = "top"
 
 local targetFieldPercentage = 50
@@ -21,9 +20,6 @@ local emergencyChargeGate = peripheral.wrap(emergencyChargeGateSide)
 local reactor = peripheral.wrap(reactorSide)
 
 
-if monitor == nil then
-	error("Monitor is not connected to the network.")
-end
 if inputFluxGate == nil then
 	error("Input flux gate is not connected to the network.")
 end
@@ -33,8 +29,15 @@ end
 if reactor == nil then
 	error("Reactor stabilizer is not on the "..reactorSide.." of the computer. Either change the side or move the reactor stabilizer.")
 end
-if emergencyChargeIsSetup and emergencyChargeGate == nil then
-	error("Emergency charge flux gate is not on the "..emergencyChargeGateSide.." side of the computer. Either disable emergency charge or move the flux gate.")
+
+local usingMonitor = true
+if monitor == nil then
+	usingMonitor = false
+end
+
+local emergencyChargeIsSetup = true
+if emergencyChargeGate == nil then
+	emergencyChargeIsSetup = false
 end
 
 os.loadAPI("GraphicsAPI")
@@ -43,9 +46,7 @@ local saturationPercentage, fieldPercentage, fuelPercentage
 local lastEmergencyAction = "None."
 
 -- Monitor update function
-function updateTerm(mon, reactorInfo)
-	term.redirect(mon)
-
+function updateTerm(reactorInfo)
 	GraphicsAPI.resetScreen()
 
 	-- Reactor Status
@@ -123,16 +124,18 @@ function updateTerm(mon, reactorInfo)
 	GraphicsAPI.writeText("Last Emergency Action: "..lastEmergencyAction, {1,19}, colors.gray)
 end
 
-
-local terminal = term.redirect(monitor)
-
 -- Main loop
 while true do
 	reactorInfo = reactor.getReactorInfo()
 
-	-- Write to both our monitor and the terminal
-	updateTerm(monitor, reactorInfo)
-	updateTerm(terminal, reactorInfo)
+	if usingMonitor then
+		-- Write to our monitor
+		terminal = term.redirect(monitor)
+		updateTerm(reactorInfo)
+		-- Write to our terminal
+		term.redirect(terminal)
+	end
+	updateTerm(reactorInfo)
 
 
 	if reactorInfo.status == "running" then
