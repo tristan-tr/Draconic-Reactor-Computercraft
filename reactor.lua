@@ -37,12 +37,6 @@ if emergencyChargeIsSetup and emergencyChargeGate == nil then
 	error("Emergency charge flux gate is not on the "..emergencyChargeGateSide.." side of the computer. Either disable emergency charge or move the flux gate.")
 end
 
-
-apiURL = "https://pastebin.com/raw/QJ119q9Z"
-apiFile = fs.open("GraphicsAPI", "w")
-apiFile.write(http.get(apiURL).readAll())
-apiFile.close()
-
 os.loadAPI("GraphicsAPI")
 
 local saturationPercentage, fieldPercentage, fuelPercentage
