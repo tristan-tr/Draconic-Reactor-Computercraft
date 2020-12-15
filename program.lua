@@ -3,7 +3,7 @@ local reactorSide = "back"
 local outputGateSide = "right"
 local emergencyChargeGateSide = "top"
 
-local targetFieldPercentage = 10
+local targetFieldPercentage = 50
 local targetTemperature = 7995
 
 local monitorUpdateTime = 0.1 -- seconds
@@ -13,7 +13,7 @@ local sleepTime = 0.05 -- one tick
 
 -- Shutdown when these get hit to avoid meltdown
 local maxTemperature = 8200
-local lowestFieldPercentage = 5
+local lowestFieldPercentage = 15
 
 local monitor = peripheral.find("monitor")
 local inputFluxGate = peripheral.find("flux_gate")
