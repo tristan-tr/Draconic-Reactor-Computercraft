@@ -6,8 +6,10 @@ local emergencyChargeGateSide = "top"
 local targetFieldPercentage = 10
 local targetTemperature = 7995
 
-local autoActivate = true
+local monitorUpdateTime = 0.1 -- seconds
 -- DONT CHANGE AFTER THIS
+
+local sleepTime = 0.05 -- one tick
 
 -- Shutdown when these get hit to avoid meltdown
 local maxTemperature = 8200
@@ -22,7 +24,7 @@ local reactor = peripheral.wrap(reactorSide)
 
 if inputFluxGate == nil then
 	error("Input flux gate is not connected to the network.")
-end
+endss
 if outputFluxGate == nil then
 	error("Output flux gate is not on the "..outputGateSide.." of the computer. Either change the side or move the flux gate.")
 end
@@ -89,13 +91,11 @@ function updateTerm(reactorInfo)
 	GraphicsAPI.writeTextRight(tostring(math.floor(outputFluxGate.getSignalLowFlow())).." rf/t", {1, 9}, colors.green)
 
 	-- Saturation
-	saturationPercentage = (reactorInfo.energySaturation / reactorInfo.maxEnergySaturation) * 100
 	GraphicsAPI.writeText("Saturation", {2,11}, colors.white)
 	GraphicsAPI.writeTextRight(string.format("%.2f", saturationPercentage).."%", {1, 11}, colors.green)
 	GraphicsAPI.drawProgressBar({2, 12}, term.getSize() - 4, saturationPercentage, colors.blue, colors.gray)
 
 	-- Field Strength
-	fieldPercentage = reactorInfo.fieldStrength / 1000000
 	fieldColor = colors.green
 	if targetFieldPercentage - fieldPercentage > 5 then
 		fieldColor = colors.red
@@ -105,7 +105,6 @@ function updateTerm(reactorInfo)
 	GraphicsAPI.drawProgressBar({2,15}, term.getSize() - 4, fieldPercentage, fieldColor, colors.gray)
 
 	-- Fuel percentage
-	fuelPercentage = 100 - ((reactorInfo.fuelConversion / reactorInfo.maxFuelConversion) * 100)
 	fuelColor = colors.green
 	if fuelPercentage < 70 then
 		fuelColor = colors.orange
@@ -142,86 +141,94 @@ local outflowDLast = 0
 
 -- Main loop
 while true do
-	reactorInfo = reactor.getReactorInfo()
+	for i=1,monitorUpdateTime/sleepTime do
+		reactorInfo = reactor.getReactorInfo()
 
+		saturationPercentage = (reactorInfo.energySaturation / reactorInfo.maxEnergySaturation) * 100
+		fieldPercentage = reactorInfo.fieldStrength / 1000000
+		fuelPercentage = 100 - ((reactorInfo.fuelConversion / reactorInfo.maxFuelConversion) * 100)
+
+		updateTerm(reactorInfo)
+
+		if reactorInfo.status == "running" then
+			-- https://pastebin.com/t9ETGyZk
+			-- Change our input gate to keep field strength at our target
+		    local fieldError = (reactorInfo.maxFieldStrength * (targetFieldPercentage / 100)) - reactorInfo.fieldStrength
+		    local proportionalFieldError = fieldError * inflowPGain
+		    inflowISum = inflowISum + fieldError
+		    local integralFieldError = inflowISum * inflowIGain
+		    local derivativeFieldError = (fieldError - inflowDLast) * inflowDGain
+		    inflowDLast = fieldError
+		    local inflow = proportionalFieldError + integralFieldError + derivativeFieldError
+		    if inflow < 0 then
+		      inflowISum = inflowISum - fieldError
+		    end
+
+		    inputFluxGate.setSignalLowFlow(inflow);
+
+			-- Change our output gate to keep temperature at our target
+		    local tempError = targetTemperature - reactorInfo.temperature
+		    local proportionalTempError = tempError * outflowPGain
+		    outflowISum = outflowISum + tempError
+		    local integralTempError = outflowISum * outflowIGain
+		    if math.abs(tempError) < 100 then
+		    	outflowIISum = outflowIISum + integralTempError
+		    else
+		        outflowIISum = 0
+		    end
+		    local secondIntegralTempError = outflowIISum * outflowIIGain
+		    local derivativeTempError = (tempError - outflowDLast) * outflowDGain
+		    outflowDLast = tempError
+		    local outflow = proportionalTempError + integralTempError + secondIntegralTempError + derivativeTempError
+		    if outflow < 0 then
+		        outflowISum = outflowISum - tempError
+		    end
+
+		    outputFluxGate.setSignalLowFlow(outflow)
+		else
+			if reactorInfo.status == "warming_up" then
+				-- We are charging so we need to set our input gate to allow RF
+				inputFluxGate.setSignalLowFlow(200000)
+			end
+		end
+
+		-- Safety features
+		-- Stop when out of fuel
+		if fuelPercentage < 10 then
+			reactor.stopReactor()
+			lastEmergencyAction = "Fuel < 10"
+		end
+
+		-- Stop when the temperature is too high
+		if reactorInfo.temperature > maxTemperature then
+			reactor.stopReactor()
+			lastEmergencyAction = "Temperature > "..maxTemperature
+		end
+
+		-- Field percentage is too low, we need to emergency charge
+		if fieldPercentage < lowestFieldPercentage and reactorInfo.status == "running" or reactorInfo.status == "cooling" then
+			reactor.stopReactor()
+			if emergencyChargeIsSetup then
+				reactor.chargeReactor()
+				emergencyChargeGate.setSignalLowFlow(200000)
+			end
+			lastEmergencyAction = "Field Percentage < "..lowestFieldPercentage
+		else
+			if emergencyChargeIsSetup then
+			emergencyChargeGate.setSignalLowFlow(0)
+			end
+		end
+
+		sleep(sleepTime)
+	end
+
+
+	-- We only update our monitor every second to avoid lag
 	if usingMonitor then
 		-- Write to our monitor
 		terminal = term.redirect(monitor)
 		updateTerm(reactorInfo)
-		-- Write to our terminal
+		-- Write to our terminal next time we write
 		term.redirect(terminal)
 	end
-	updateTerm(reactorInfo)
-
-
-	if reactorInfo.status == "running" then
-		-- https://pastebin.com/t9ETGyZk
-		-- Change our input gate to keep field strength at our target
-	    local fieldError = (reactorInfo.maxFieldStrength * (targetFieldPercentage / 100)) - reactorInfo.fieldStrength
-	    local proportionalFieldError = fieldError * inflowPGain
-	    inflowISum = inflowISum + fieldError
-	    local integralFieldError = inflowISum * inflowIGain
-	    local derivativeFieldError = (fieldError - inflowDLast) * inflowDGain
-	    inflowDLast = fieldError
-	    local inflow = proportionalFieldError + integralFieldError + derivativeFieldError
-	    if inflow < 0 then
-	      inflowISum = inflowISum - fieldError
-	    end
-
-	    inputFluxGate.setSignalLowFlow(inflow);
-
-		-- Change our output gate to keep temperature at our target
-	    local tempError = targetTemperature - reactorInfo.temperature
-	    local proportionalTempError = tempError * outflowPGain
-	    outflowISum = outflowISum + tempError
-	    local integralTempError = outflowISum * outflowIGain
-	    if math.abs(tempError) < 100 then
-	    	outflowIISum = outflowIISum + integralTempError
-	    else
-	        outflowIISum = 0
-	    end
-	    local secondIntegralTempError = outflowIISum * outflowIIGain
-	    local derivativeTempError = (tempError - outflowDLast) * outflowDGain
-	    outflowDLast = tempError
-	    local outflow = proportionalTempError + integralTempError + secondIntegralTempError + derivativeTempError
-	    if outflow < 0 then
-	        outflowISum = outflowISum - tempError
-	    end
-
-	    outputFluxGate.setSignalLowFlow(outflow)
-	else
-		if reactorInfo.status == "warming_up" then
-			-- We are charging so we need to set our input gate to allow RF
-			inputFluxGate.setSignalLowFlow(200000)
-		end
-	end
-
-	-- Safety features
-	-- Stop when out of fuel
-	if fuelPercentage < 10 then
-		reactor.stopReactor()
-		lastEmergencyAction = "Fuel < 10"
-	end
-
-	-- Stop when the temperature is too high
-	if reactorInfo.temperature > maxTemperature then
-		reactor.stopReactor()
-		lastEmergencyAction = "Temperature > "..maxTemperature
-	end
-
-	-- Field percentage is too low, we need to emergency charge
-	if fieldPercentage < lowestFieldPercentage and reactorInfo.status == "running" or reactorInfo.status == "cooling" then
-		reactor.stopReactor()
-		if emergencyChargeIsSetup then
-			reactor.chargeReactor()
-			emergencyChargeGate.setSignalLowFlow(200000)
-		end
-		lastEmergencyAction = "Field Percentage < "..lowestFieldPercentage
-	else
-		if emergencyChargeIsSetup then
-		emergencyChargeGate.setSignalLowFlow(0)
-		end
-	end
-
-	sleep(0.05)
 end
