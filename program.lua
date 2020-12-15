@@ -210,7 +210,7 @@ while true do
 			reactor.stopReactor()
 			if emergencyChargeIsSetup then
 				reactor.chargeReactor()
-				emergencyChargeGate.setSignalLowFlow(200000)
+				emergencyChargeGate.setSignalLowFlow(10000000)
 			end
 			lastEmergencyAction = "Field Percentage < "..lowestFieldPercentage
 		else
