@@ -24,7 +24,7 @@ local reactor = peripheral.wrap(reactorSide)
 
 if inputFluxGate == nil then
 	error("Input flux gate is not connected to the network.")
-endss
+end
 if outputFluxGate == nil then
 	error("Output flux gate is not on the "..outputGateSide.." of the computer. Either change the side or move the flux gate.")
 end
