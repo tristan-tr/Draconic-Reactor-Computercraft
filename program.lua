@@ -140,13 +140,19 @@ while true do
 		    inputFluxGate.setSignalLowFlow(reactorInfo.fieldDrainRate / (1 - (targetFieldPercentage/100)));
 
 		    -- Change our output gate to keep temperature at our target
-		    -- Cap our temperature difference to 2000 to not rise too quickly
-		    temperatureDifference = math.min(targetTemperature - reactorInfo.temperature, 2000) 
 
-		    outflow = (reactorInfo.energySaturation * reactorInfo.temperature - 20000 * reactorInfo.energySaturation + reactorInfo.generationRate * reactorInfo.temperature - 20000 * reactorInfo.generationRate - reactorInfo.maxEnergySaturation * reactorInfo.temperature + 20000 * reactorInfo.maxEnergySaturation)/(reactorInfo.temperature - 20000)
+		    -- Temperature is based on saturation and fuel, we need to control the saturation to control the temperature
+		    temp50 = math.min((reactorInfo.temperature / 10000) * 50, 99)
 
+		    a = targetTemperature
+		    b = reactorInfo.energySaturation
+		    c = reactorInfo.generationRate
+		    d = reactorInfo.maxEnergySaturation
+		    e = temp50^4 / (100 - temp50)
+		    f = (fuelConversion * 1.3) - 0.3;
+	    	x = b + c - d - (-12815311369410*d^2 + 28817880300000*a*d^2 + 28817880300*d^2*e - 28817880300000*d^2*f - 28817880300*d^2*e*f)/(14554485*2^(2/3)*(-1130425800584286690000*d^3 + 2541996403382700000000*a*d^3 + 2541996403382700000*d^3*e - 2541996403382700000000*d^3*f - 2541996403382700000*d^3*e*f + math.sqrt(4*(-12815311369410*d^2 + 28817880300000*a*d^2 + 28817880300*d^2*e - 28817880300000*d^2*f - 28817880300*d^2*e*f)^3 + (-1130425800584286690000*d^3 + 2541996403382700000000*a*d^3 + 2541996403382700000*d^3*e - 2541996403382700000000*d^3*f - 2541996403382700000*d^3*e*f)^2))^(1/3)) + (-1130425800584286690000*d^3 + 2541996403382700000000*a*d^3 + 2541996403382700000*d^3*e - 2541996403382700000000*d^3*f - 2541996403382700000*d^3*e*f + math.sqrt(4*(-12815311369410*d^2 + 28817880300000*a*d^2 + 28817880300*d^2*e - 28817880300000*d^2*f - 28817880300*d^2*e*f)^3 + (-1130425800584286690000*d^3 + 2541996403382700000000*a*d^3 + 2541996403382700000*d^3*e - 2541996403382700000000*d^3*f - 2541996403382700000*d^3*e*f)^2))^(1/3)/(29108970*2^(1/3))
 
-		    outputFluxGate.setSignalLowFlow(outflow)
+		    outputFluxGate.setSignalLowFlow(x)
 		else
 			if reactorInfo.status == "warming_up" then
 				-- We are charging so we need to set our input gate to allow RF
