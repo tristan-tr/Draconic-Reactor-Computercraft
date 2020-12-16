@@ -120,6 +120,25 @@ function updateTerm(reactorInfo)
 	GraphicsAPI.writeText("Last Emergency Action: "..lastEmergencyAction, {1,19}, colors.gray)
 end
 
+-- https://pastebin.com/t9ETGyZk
+-- Tweakable PID gains
+ 
+local inflowPGain = 1
+local inflowIGain = 0.04
+local inflowDGain = 0.1
+ 
+local outflowPGain = 500
+local outflowIGain = 0.5
+local outflowIIGain = 0.0000003
+local outflowDGain = 60000
+
+local inflowISum = 0
+local inflowDLast = 0
+ 
+local outflowISum = 0
+local outflowIISum = 0
+local outflowDLast = 0
+
 -- Main loop
 while true do
 	for i=1,monitorUpdateTime/sleepTime do
@@ -127,32 +146,45 @@ while true do
 
 		saturationPercentage = (reactorInfo.energySaturation / reactorInfo.maxEnergySaturation) * 100
 		fieldPercentage = reactorInfo.fieldStrength / 1000000
-		fuelConversion = reactorInfo.fuelConversion / reactorInfo.maxFuelConversion
-		fuelPercentage = 100 - (fuelConversion * 100)
+		fuelPercentage = 100 - ((reactorInfo.fuelConversion / reactorInfo.maxFuelConversion) * 100)
 
 		updateTerm(reactorInfo)
 
 		if reactorInfo.status == "running" then
-			-- Formulas are derived from the draconic evolution source
-			-- https://github.com/brandon3055/Draconic-Evolution/blob/866f17aa9bae1266455d8d86d3417331396c252f/src/main/java/com/brandon3055/draconicevolution/blocks/reactor/tileentity/TileReactorCore.java#L270
+			-- https://pastebin.com/t9ETGyZk
+			-- Change our input gate to keep field strength at our target
+		    local fieldError = (reactorInfo.maxFieldStrength * (targetFieldPercentage / 100)) - reactorInfo.fieldStrength
+		    local proportionalFieldError = fieldError * inflowPGain
+		    inflowISum = inflowISum + fieldError
+		    local integralFieldError = inflowISum * inflowIGain
+		    local derivativeFieldError = (fieldError - inflowDLast) * inflowDGain
+		    inflowDLast = fieldError
+		    local inflow = proportionalFieldError + integralFieldError + derivativeFieldError
+		    if inflow < 0 then
+		      inflowISum = inflowISum - fieldError
+		    end
 
-		    -- Change our input gate to keep the field percentage at our target
-		    inputFluxGate.setSignalLowFlow(reactorInfo.fieldDrainRate / (1 - (targetFieldPercentage/100)));
+		    inputFluxGate.setSignalLowFlow(inflow);
 
-		    -- Change our output gate to keep temperature at our target
+			-- Change our output gate to keep temperature at our target
+		    local tempError = targetTemperature - reactorInfo.temperature
+		    local proportionalTempError = tempError * outflowPGain
+		    outflowISum = outflowISum + tempError
+		    local integralTempError = outflowISum * outflowIGain
+		    if math.abs(tempError) < 100 then
+		    	outflowIISum = outflowIISum + integralTempError
+		    else
+		        outflowIISum = 0
+		    end
+		    local secondIntegralTempError = outflowIISum * outflowIIGain
+		    local derivativeTempError = (tempError - outflowDLast) * outflowDGain
+		    outflowDLast = tempError
+		    local outflow = proportionalTempError + integralTempError + secondIntegralTempError + derivativeTempError
+		    if outflow < 0 then
+		        outflowISum = outflowISum - tempError
+		    end
 
-		    -- Temperature is based on saturation and fuel, we need to control the saturation to control the temperature
-		    temp50 = math.min((reactorInfo.temperature / 10000) * 50, 99)
-
-		    a = targetTemperature
-		    b = reactorInfo.energySaturation
-		    c = reactorInfo.generationRate
-		    d = reactorInfo.maxEnergySaturation
-		    e = temp50^4 / (100 - temp50)
-		    f = (fuelConversion * 1.3) - 0.3;
-	    	x = b + c - d - (-12815311369410*d^2 + 28817880300000*a*d^2 + 28817880300*d^2*e - 28817880300000*d^2*f - 28817880300*d^2*e*f)/(14554485*2^(2/3)*(-1130425800584286690000*d^3 + 2541996403382700000000*a*d^3 + 2541996403382700000*d^3*e - 2541996403382700000000*d^3*f - 2541996403382700000*d^3*e*f + math.sqrt(4*(-12815311369410*d^2 + 28817880300000*a*d^2 + 28817880300*d^2*e - 28817880300000*d^2*f - 28817880300*d^2*e*f)^3 + (-1130425800584286690000*d^3 + 2541996403382700000000*a*d^3 + 2541996403382700000*d^3*e - 2541996403382700000000*d^3*f - 2541996403382700000*d^3*e*f)^2))^(1/3)) + (-1130425800584286690000*d^3 + 2541996403382700000000*a*d^3 + 2541996403382700000*d^3*e - 2541996403382700000000*d^3*f - 2541996403382700000*d^3*e*f + math.sqrt(4*(-12815311369410*d^2 + 28817880300000*a*d^2 + 28817880300*d^2*e - 28817880300000*d^2*f - 28817880300*d^2*e*f)^3 + (-1130425800584286690000*d^3 + 2541996403382700000000*a*d^3 + 2541996403382700000*d^3*e - 2541996403382700000000*d^3*f - 2541996403382700000*d^3*e*f)^2))^(1/3)/(29108970*2^(1/3))
-
-		    outputFluxGate.setSignalLowFlow(x)
+		    outputFluxGate.setSignalLowFlow(outflow)
 		else
 			if reactorInfo.status == "warming_up" then
 				-- We are charging so we need to set our input gate to allow RF
@@ -178,7 +210,7 @@ while true do
 			reactor.stopReactor()
 			if emergencyChargeIsSetup then
 				reactor.chargeReactor()
-				emergencyChargeGate.setSignalLowFlow(10000000)
+				emergencyChargeGate.setSignalLowFlow(200000)
 			end
 			lastEmergencyAction = "Field Percentage < "..lowestFieldPercentage
 		else
