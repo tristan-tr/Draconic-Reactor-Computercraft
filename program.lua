@@ -120,25 +120,6 @@ function updateTerm(reactorInfo)
 	GraphicsAPI.writeText("Last Emergency Action: "..lastEmergencyAction, {1,19}, colors.gray)
 end
 
--- https://pastebin.com/t9ETGyZk
--- Tweakable PID gains
- 
-local inflowPGain = 1
-local inflowIGain = 0.04
-local inflowDGain = 0.1
- 
-local outflowPGain = 500
-local outflowIGain = 0.5
-local outflowIIGain = 0.0000003
-local outflowDGain = 60000
-
-local inflowISum = 0
-local inflowDLast = 0
- 
-local outflowISum = 0
-local outflowIISum = 0
-local outflowDLast = 0
-
 -- Main loop
 while true do
 	for i=1,monitorUpdateTime/sleepTime do
@@ -146,43 +127,24 @@ while true do
 
 		saturationPercentage = (reactorInfo.energySaturation / reactorInfo.maxEnergySaturation) * 100
 		fieldPercentage = reactorInfo.fieldStrength / 1000000
-		fuelPercentage = 100 - ((reactorInfo.fuelConversion / reactorInfo.maxFuelConversion) * 100)
+		fuelConversion = reactorInfo.fuelConversion / reactorInfo.maxFuelConversion
+		fuelPercentage = 100 - (fuelConversion * 100)
 
 		updateTerm(reactorInfo)
 
 		if reactorInfo.status == "running" then
-			-- https://pastebin.com/t9ETGyZk
-			-- Change our input gate to keep field strength at our target
-		    local fieldError = (reactorInfo.maxFieldStrength * (targetFieldPercentage / 100)) - reactorInfo.fieldStrength
-		    local proportionalFieldError = fieldError * inflowPGain
-		    inflowISum = inflowISum + fieldError
-		    local integralFieldError = inflowISum * inflowIGain
-		    local derivativeFieldError = (fieldError - inflowDLast) * inflowDGain
-		    inflowDLast = fieldError
-		    local inflow = proportionalFieldError + integralFieldError + derivativeFieldError
-		    if inflow < 0 then
-		      inflowISum = inflowISum - fieldError
-		    end
+			-- Formulas are derived from the draconic evolution source
+			-- https://github.com/brandon3055/Draconic-Evolution/blob/866f17aa9bae1266455d8d86d3417331396c252f/src/main/java/com/brandon3055/draconicevolution/blocks/reactor/tileentity/TileReactorCore.java#L270
 
-		    inputFluxGate.setSignalLowFlow(inflow);
+		    -- Change our input gate to keep the field percentage at our target
+		    inputFluxGate.setSignalLowFlow(reactorInfo.fieldDrainRate / (1 - (targetFieldPercentage/100)));
 
-			-- Change our output gate to keep temperature at our target
-		    local tempError = targetTemperature - reactorInfo.temperature
-		    local proportionalTempError = tempError * outflowPGain
-		    outflowISum = outflowISum + tempError
-		    local integralTempError = outflowISum * outflowIGain
-		    if math.abs(tempError) < 100 then
-		    	outflowIISum = outflowIISum + integralTempError
-		    else
-		        outflowIISum = 0
-		    end
-		    local secondIntegralTempError = outflowIISum * outflowIIGain
-		    local derivativeTempError = (tempError - outflowDLast) * outflowDGain
-		    outflowDLast = tempError
-		    local outflow = proportionalTempError + integralTempError + secondIntegralTempError + derivativeTempError
-		    if outflow < 0 then
-		        outflowISum = outflowISum - tempError
-		    end
+		    -- Change our output gate to keep temperature at our target
+		    -- Cap our temperature difference to 2000 to not rise too quickly
+		    temperatureDifference = math.min(targetTemperature - reactorInfo.temperature, 2000) 
+
+		    outflow = (reactorInfo.energySaturation * reactorInfo.temperature - 20000 * reactorInfo.energySaturation + reactorInfo.generationRate * reactorInfo.temperature - 20000 * reactorInfo.generationRate - reactorInfo.maxEnergySaturation * reactorInfo.temperature + 20000 * reactorInfo.maxEnergySaturation)/(reactorInfo.temperature - 20000)
+
 
 		    outputFluxGate.setSignalLowFlow(outflow)
 		else
