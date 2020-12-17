@@ -120,13 +120,11 @@ function updateTerm(reactorInfo)
 	GraphicsAPI.writeText("Last Emergency Action: "..lastEmergencyAction, {1,19}, colors.gray)
 end
 
---local temperature_control = controllerAPI.pd_controller:create(5.0, 100.0, 8000)
-
 local lastSum = 0
 local lastErr = 0
 
-local kp = 355.31
-local kd = 37.70
+local kp = 5
+local kd = 100
 
 local function updateReactor(reactorInfo)
   local err = targetTemperature - reactorInfo.temperature
