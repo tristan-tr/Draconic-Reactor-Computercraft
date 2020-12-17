@@ -126,7 +126,7 @@ local function updateReactor(reactorInfo)
   	-- Rapidly increase temperature, but not too fast to avoid meltdowns, etc.
   	outputFluxGate.setSignalLowFlow(reactorInfo.generationRate)
   else
-  	outputFluxGate.setSignalLowFlow(reactorInfo.generationRate * ((100 - saturationPercentage) / 10))
+  	outputFluxGate.setSignalLowFlow(reactorInfo.generationRate * (1 + (saturationPercentage / 100)))
   end
   inputFluxGate.setSignalLowFlow(reactorInfo.fieldDrainRate / (1 - (targetFieldPercentage/100)))
 end
