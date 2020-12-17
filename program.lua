@@ -120,6 +120,28 @@ function updateTerm(reactorInfo)
 	GraphicsAPI.writeText("Last Emergency Action: "..lastEmergencyAction, {1,19}, colors.gray)
 end
 
+--local temperature_control = controllerAPI.pd_controller:create(5.0, 100.0, 8000)
+
+local lastSum = 0
+local lastErr = 0
+
+local kp = 355.31
+local kd = 37.70
+
+local function updateReactor(reactorInfo)
+  local err = targetTemperature - reactorInfo.temperature
+  local p = kp * err
+  local d = kd * (err - lastErr)
+
+  local output = p + d
+
+  lastSum = lastSum + err
+  lastErr = err
+  
+  outputFluxGate.setSignalLowFlow(output)
+  inputFluxGate.setSignalLowFlow(reactorInfo.fieldDrainRate / (1 - (targetFieldPercentage/100)))
+end
+
 -- Main loop
 while true do
 	for i=1,monitorUpdateTime/sleepTime do
@@ -133,24 +155,7 @@ while true do
 		updateTerm(reactorInfo)
 
 		if reactorInfo.status == "running" then
-			-- Formulas are derived from the draconic evolution source
-			-- https://github.com/brandon3055/Draconic-Evolution/blob/866f17aa9bae1266455d8d86d3417331396c252f/src/main/java/com/brandon3055/draconicevolution/blocks/reactor/tileentity/TileReactorCore.java#L270
-
-		    -- Change our input gate to keep the field percentage at our target
-		    inputFluxGate.setSignalLowFlow(reactorInfo.fieldDrainRate / (1 - (targetFieldPercentage/100)));
-
-		    -- Change our output gate to keep temperature at our target
-		    newSat = reactorInfo.maxEnergySaturation * 0.80
-
-		    flux = reactorInfo.energySaturation + reactorInfo.generationRate - newSat
-
-		    coreSat = newSat / reactorInfo.maxEnergySaturation
-		    negCSat = (1 - coreSat) * 99
-		    temp50 = math.min(reactorInfo.temperature / 200, 99)
-		    convLVL = fuelConversion * 1.3 - 0.3
-
-
-		    outputFluxGate.setSignalLowFlow(flux)
+			updateReactor(reactorInfo)
 		else
 			if reactorInfo.status == "warming_up" then
 				-- We are charging so we need to set our input gate to allow RF
