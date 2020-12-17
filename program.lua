@@ -4,7 +4,7 @@ local outputGateSide = "right"
 local emergencyChargeGateSide = "top"
 
 local targetFieldPercentage = 50
-local targetTemperature = 7995
+local targetTemperatureRange = {7950, 8000}
 
 local monitorUpdateTime = 0.1 -- seconds
 -- DONT CHANGE AFTER THIS
@@ -120,23 +120,14 @@ function updateTerm(reactorInfo)
 	GraphicsAPI.writeText("Last Emergency Action: "..lastEmergencyAction, {1,19}, colors.gray)
 end
 
-local lastSum = 0
-local lastErr = 0
-
-local kp = 5
-local kd = 100
-
 local function updateReactor(reactorInfo)
-  local err = targetTemperature - reactorInfo.temperature
-  local p = kp * err
-  local d = kd * (err - lastErr)
-
-  local output = p + d
-
-  lastSum = lastSum + err
-  lastErr = err
-  
-  outputFluxGate.setSignalLowFlow(output)
+  -- Rapidly increase temperature until we are in our range, then keep our flux output the same as the generation rate to avoid temperature loss
+  if reactorInfo.temperature => targetTemperatureRange[1] and reactorInfo.temperature <= targetTemperatureRange[2] then
+  	-- Rapidly increase temperature, but not too fast to avoid meltdowns, etc.
+  	outputFluxGate.setSignalLowFlow(reactorInfo.generationRate)
+  else
+  	outputFluxGate.setSignalLowFlow(reactorInfo.generationRate * 2)
+  end
   inputFluxGate.setSignalLowFlow(reactorInfo.fieldDrainRate / (1 - (targetFieldPercentage/100)))
 end
 
