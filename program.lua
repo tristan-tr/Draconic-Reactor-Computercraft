@@ -123,7 +123,7 @@ end
 local function updateReactor(reactorInfo)
   -- Rapidly increase temperature until we are in our range, then keep our flux output the same as the generation rate to avoid temperature loss
   if reactorInfo.temperature >= targetTemperatureRange[1] and reactorInfo.temperature <= targetTemperatureRange[2] then
-  	outputFluxGate.setSignalLowFlow(reactorInfo.generationRate)
+  	outputFluxGate.setSignalLowFlow(reactorInfo.generationRate - saturationPercentage)
   else
 	-- Rapidly increase temperature, but not too fast (temperature increase is based on saturation so we account for that)
   	outputFluxGate.setSignalLowFlow(reactorInfo.generationRate * (1 + (saturationPercentage / 100)))
